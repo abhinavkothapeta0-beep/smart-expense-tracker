@@ -1,14 +1,25 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect
 import sqlite3
+import os
 
 app = Flask(__name__)
 
+DB_NAME = "expenses.db"
+
+
+# ---------- DATABASE ----------
+def get_db():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init_db():
-    conn = sqlite3.connect("expenses.db")
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS expenses(
+    CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
         category TEXT,
@@ -20,41 +31,60 @@ def init_db():
     conn.commit()
     conn.close()
 
-@app.route("/", methods=["GET","POST"])
-def index():
 
-    conn = sqlite3.connect("expenses.db")
+# Create table when app starts
+init_db()
+
+
+# ---------- HOME ----------
+@app.route("/")
+def index():
+    conn = get_db()
     cursor = conn.cursor()
 
-    if request.method == "POST":
-
-        date = request.form["date"]
-        category = request.form["category"]
-        amount = request.form["amount"]
-        desc = request.form["desc"]
-
-        cursor.execute(
-        "INSERT INTO expenses(date,category,amount,description) VALUES(?,?,?,?)",
-        (date,category,amount,desc))
-
-        conn.commit()
-
-    cursor.execute("SELECT * FROM expenses")
-    data = cursor.fetchall()
-
-    cursor.execute("SELECT category, SUM(amount) FROM expenses GROUP BY category")
-    chart = cursor.fetchall()
+    cursor.execute("SELECT * FROM expenses ORDER BY id DESC")
+    expenses = cursor.fetchall()
 
     conn.close()
 
-    categories = [row[0] for row in chart]
-    amounts = [row[1] for row in chart]
+    return render_template("index.html", expenses=expenses)
 
-    return render_template("index.html",
-                           expenses=data,
-                           categories=categories,
-                           amounts=amounts)
 
+# ---------- ADD EXPENSE ----------
+@app.route("/add", methods=["POST"])
+def add():
+    date = request.form["date"]
+    category = request.form["category"]
+    amount = request.form["amount"]
+    description = request.form["description"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO expenses (date, category, amount, description) VALUES (?, ?, ?, ?)",
+        (date, category, amount, description)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/")
+
+
+# ---------- DELETE ----------
+@app.route("/delete/<int:id>")
+def delete(id):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM expenses WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+
+    return redirect("/")
+
+
+# ---------- RUN LOCAL ----------
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)
